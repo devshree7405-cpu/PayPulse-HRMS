@@ -141,7 +141,7 @@ def approve_leave(
 
     leave_request.status = "Approved"
     leave_request.approved_by = current_user.employee_id
-    leave_request.approved_on = datetime.now(timezone.utc)
+    leave_request.approved_on = datetime.now()
 
     db.commit()
     db.refresh(leave_request)
@@ -169,7 +169,7 @@ def reject_leave(
     leave_request.status = "Rejected"
     leave_request.manager_comments = payload.manager_comments
     leave_request.approved_by = current_user.employee_id
-    leave_request.approved_on = datetime.now(timezone.utc)
+    leave_request.approved_on = datetime.now()
 
     db.commit()
     db.refresh(leave_request)

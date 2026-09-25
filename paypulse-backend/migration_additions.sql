@@ -59,3 +59,8 @@ CREATE TABLE payslip_details (
     FOREIGN KEY (payslip_id)   REFERENCES payslips(payslip_id)             ON UPDATE CASCADE ON DELETE CASCADE,
     FOREIGN KEY (component_id) REFERENCES salary_components(component_id) ON UPDATE CASCADE ON DELETE RESTRICT
 ) ENGINE=InnoDB;
+
+USE hr_system;
+SHOW COLUMNS FROM leave_types LIKE 'is_paid';
+SHOW TABLES LIKE 'payslip_details';
+SHOW COLUMNS FROM employees LIKE 'base_salary';

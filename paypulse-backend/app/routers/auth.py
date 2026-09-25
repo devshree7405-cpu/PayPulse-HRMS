@@ -27,7 +27,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
             status_code=status.HTTP_403_FORBIDDEN, detail="This account has been deactivated"
         )
 
-    user.last_login_at = datetime.now(timezone.utc)
+    user.last_login_at = datetime.now()
     db.commit()
 
     token = create_access_token(
