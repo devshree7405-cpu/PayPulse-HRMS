@@ -52,3 +52,12 @@ class LeaveBalanceOut(BaseModel):
     allocated: Decimal
     used: Decimal
     remaining: Decimal
+
+
+class LeaveTypeOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    leave_type_id: int
+    leave_type_name: str
+    max_days_per_year: int
+    carry_forward_allowed: bool
+    is_paid: bool

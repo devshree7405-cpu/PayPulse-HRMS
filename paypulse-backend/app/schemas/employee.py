@@ -107,6 +107,16 @@ class EmployeeUpdate(BaseModel):
     profile_photo_url: Optional[str] = None
 
 
+class EmployeeSelfUpdate(BaseModel):
+    """Fields an employee may maintain on their own profile."""
+
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    emergency_contact_name: Optional[str] = None
+    emergency_contact_phone: Optional[str] = None
+    profile_photo_url: Optional[str] = None
+
+
 class EmployeeOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     employee_id: int

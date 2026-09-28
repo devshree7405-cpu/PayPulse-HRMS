@@ -15,6 +15,7 @@ from app.schemas.employee import (
     DesignationOut,
     EmployeeCreate,
     EmployeeOut,
+    EmployeeSelfUpdate,
     EmployeeUpdate,
 )
 from app.security import hash_password
@@ -117,6 +118,21 @@ def list_employees(
     elif current_user.role == "Employee":
         query = query.filter(Employee.employee_id == current_user.employee_id)
     return query.order_by(Employee.employee_id).all()
+
+
+@router.patch("/employees/me/profile", response_model=EmployeeOut)
+def update_my_profile(
+    payload: EmployeeSelfUpdate,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    """Employees can keep contact details current without HR-level access."""
+    employee = _get_employee_or_404(current_user.employee_id, db)
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(employee, field, value)
+    db.commit()
+    db.refresh(employee)
+    return employee
 
 
 @router.get("/employees/{employee_id}", response_model=EmployeeOut)
