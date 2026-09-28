@@ -30,9 +30,9 @@ SHARED_PASSWORD = "paypulse123"
 
 EXTRA_REPORTS = [
     {
-        "email": "rohan.verma@paypulse.com",
-        "first_name": "Rohan",
-        "last_name": "Verma",
+        "email": "kabir.deshmukh@paypulse.com",
+        "first_name": "Kabir",
+        "last_name": "Deshmukh",
         "employee_code": "DEMO-EMP-005",
         "designation": "Software Engineer",
         "hire_date": date(2024, 3, 10),

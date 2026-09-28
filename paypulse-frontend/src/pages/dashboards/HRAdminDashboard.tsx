@@ -87,6 +87,7 @@ const pageTitles: Record<Page, string> = {
 };
 
 const monthName = new Intl.DateTimeFormat("en-IN", { month: "long", year: "numeric" });
+const monthOnlyName = new Intl.DateTimeFormat("en-IN", { month: "long" });
 const money = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 });
 
 function initials(e: Employee | null) { return e ? `${e.first_name[0]}${e.last_name[0]}`.toUpperCase() : "H"; }
@@ -889,17 +890,27 @@ function AddEmployeeModal({ departments, designations, employees, onClose, onSav
 
   const availableDesignations = designations.filter((d) => d.department_id === Number(form.department_id));
 
+  const toggleCreateAccount = (checked: boolean) => {
+    setCreateAccount(checked);
+    // Convenience default: most new hires log in with the same email HR
+    // just entered above, but it stays fully editable - and separate,
+    // since login email and personal email are different columns.
+    if (checked && !account.email && form.personal_email) {
+      setAccount((a) => ({ ...a, email: form.personal_email }));
+    }
+  };
+
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     try {
       setSaving(true);
       await api.post("/employees", {
-        first_name: form.first_name, last_name: form.last_name, personal_email: form.personal_email,
-        phone: form.phone || undefined, hire_date: form.hire_date, employment_type: form.employment_type,
+        first_name: form.first_name.trim(), last_name: form.last_name.trim(), personal_email: form.personal_email.trim(),
+        phone: form.phone.trim() || undefined, hire_date: form.hire_date, employment_type: form.employment_type,
         department_id: Number(form.department_id), designation_id: Number(form.designation_id),
         manager_id: form.manager_id ? Number(form.manager_id) : undefined,
         base_salary: form.base_salary ? Number(form.base_salary) : 0,
-        account: createAccount ? account : undefined,
+        account: createAccount ? { ...account, email: account.email.trim() } : undefined,
       });
       await onSaved();
     } catch (err) { onNotice(extractErrorMessage(err, "Could not create employee.")); }
@@ -944,18 +955,23 @@ function AddEmployeeModal({ departments, designations, employees, onClose, onSav
 
         <div className="sm:col-span-2 rounded-xl border border-slate-200 p-4">
           <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
-            <input type="checkbox" checked={createAccount} onChange={(e) => setCreateAccount(e.target.checked)} className="h-4 w-4 rounded border-slate-300" />
+            <input type="checkbox" checked={createAccount} onChange={(e) => toggleCreateAccount(e.target.checked)} className="h-4 w-4 rounded border-slate-300" />
             Create a login account for this employee
           </label>
           {createAccount && (
-            <div className="mt-4 grid gap-4 sm:grid-cols-3">
-              <Field label="Login email"><input required={createAccount} type="email" value={account.email} onChange={(e) => setAccount({ ...account, email: e.target.value })} className={inputClass} /></Field>
-              <Field label="Password"><input required={createAccount} type="password" value={account.password} onChange={(e) => setAccount({ ...account, password: e.target.value })} className={inputClass} /></Field>
-              <Field label="Role">
-                <select value={account.role} onChange={(e) => setAccount({ ...account, role: e.target.value as typeof account.role })} className={inputClass}>
-                  <option value="Employee">Employee</option><option value="Manager">Manager</option><option value="HRAdmin">HRAdmin</option>
-                </select>
-              </Field>
+            <div className="mt-4">
+              <div className="grid gap-4 sm:grid-cols-3">
+                <Field label="Login email"><input required={createAccount} type="email" value={account.email} onChange={(e) => setAccount({ ...account, email: e.target.value })} className={inputClass} /></Field>
+                <Field label="Password"><input required={createAccount} type="password" value={account.password} onChange={(e) => setAccount({ ...account, password: e.target.value })} className={inputClass} /></Field>
+                <Field label="Role">
+                  <select value={account.role} onChange={(e) => setAccount({ ...account, role: e.target.value as typeof account.role })} className={inputClass}>
+                    <option value="Employee">Employee</option><option value="Manager">Manager</option><option value="HRAdmin">HRAdmin</option>
+                  </select>
+                </Field>
+              </div>
+              <p className="mt-2 text-xs text-amber-600">
+                ⚠️ This is what the employee will actually type in to log in — it defaults to the personal email above but can be changed. Make sure you use <strong>this</strong> email (not the personal email) when testing their login.
+              </p>
             </div>
           )}
         </div>
@@ -994,8 +1010,8 @@ function EditEmployeeModal({ employee, departments, designations, employees, onC
     try {
       setSaving(true);
       await api.patch(`/employees/${employee.employee_id}`, {
-        first_name: form.first_name, last_name: form.last_name, personal_email: form.personal_email,
-        phone: form.phone || undefined, employment_type: form.employment_type, employment_status: form.employment_status,
+        first_name: form.first_name.trim(), last_name: form.last_name.trim(), personal_email: form.personal_email.trim(),
+        phone: form.phone.trim() || undefined, employment_type: form.employment_type, employment_status: form.employment_status,
         department_id: Number(form.department_id), designation_id: Number(form.designation_id),
         manager_id: form.manager_id ? Number(form.manager_id) : null,
         base_salary: Number(form.base_salary),
@@ -1246,7 +1262,7 @@ function PayrollPage({ employees, components, onNotice }: {
             <h2 className="text-base font-bold text-slate-800">Generate payslip</h2>
             <div className="mt-4 flex gap-3">
               <select value={genMonth} onChange={(e) => setGenMonth(e.target.value)} className={inputClass}>
-                {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => <option key={m} value={m}>{monthName.format(new Date(2000, m - 1))}</option>)}
+                {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => <option key={m} value={m}>{monthOnlyName.format(new Date(2000, m - 1))}</option>)}
               </select>
               <input type="number" value={genYear} onChange={(e) => setGenYear(e.target.value)} className={`w-28 ${inputClass}`} />
               <button onClick={() => void generate()} disabled={generating} className="shrink-0 rounded-xl bg-brand-500 px-4 py-2.5 text-sm font-bold text-white hover:bg-brand-600 disabled:opacity-60">{generating ? "Generating…" : "Generate"}</button>
