@@ -5,6 +5,13 @@ from typing import List
 from pydantic import BaseModel, ConfigDict
 
 
+class SalaryComponentOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    component_id: int
+    component_name: str
+    component_type: str
+
+
 class SalaryStructureLine(BaseModel):
     component_id: int
     amount: Decimal

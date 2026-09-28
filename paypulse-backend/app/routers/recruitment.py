@@ -65,6 +65,18 @@ def create_candidate(
     return candidate
 
 
+@router.get("/candidates", response_model=list[CandidateOut])
+def list_candidates(
+    job_id: int | None = None,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role(["HRAdmin"])),
+):
+    query = db.query(Candidate)
+    if job_id is not None:
+        query = query.filter(Candidate.applied_job_id == job_id)
+    return query.order_by(Candidate.candidate_id.desc()).all()
+
+
 def _split_name(full_name: str) -> tuple[str, str]:
     parts = full_name.strip().split(" ", 1)
     return (parts[0], parts[1] if len(parts) > 1 else "")

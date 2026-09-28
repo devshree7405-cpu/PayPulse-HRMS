@@ -19,9 +19,28 @@ from app.models import (
     SalaryComponent,
     Attendance,
 )
-from app.schemas.payroll import PayslipOut, SalaryStructureIn, SalaryStructureOut
+from app.schemas.payroll import PayslipOut, SalaryComponentOut, SalaryStructureIn, SalaryStructureOut
 
 router = APIRouter(prefix="/payroll", tags=["Payroll"])
+
+
+@router.get("/components", response_model=list[SalaryComponentOut])
+def list_salary_components(
+    db: Session = Depends(get_db), current_user: CurrentUser = Depends(require_role(["HRAdmin"]))
+):
+    """Reference data for the salary-structure builder."""
+    return db.query(SalaryComponent).order_by(SalaryComponent.component_type, SalaryComponent.component_name).all()
+
+
+@router.get("/salary-structure/{employee_id}", response_model=list[SalaryStructureOut])
+def get_salary_structure(
+    employee_id: int,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role(["HRAdmin"])),
+):
+    if db.get(Employee, employee_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee not found")
+    return _active_structure_rows(db, employee_id, date.today())
 
 
 @router.post(

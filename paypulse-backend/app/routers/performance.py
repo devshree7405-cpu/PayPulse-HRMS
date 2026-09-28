@@ -27,6 +27,19 @@ def list_cycles(
     return db.query(ReviewCycle).order_by(ReviewCycle.start_date.desc()).all()
 
 
+@router.get("/reviews", response_model=list[ReviewOut])
+def list_all_reviews(
+    cycle_id: int | None = None,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role(["HRAdmin"])),
+):
+    """Org-wide review listing so HRAdmin can finalize once self + manager stages are done."""
+    query = db.query(PerformanceReview)
+    if cycle_id is not None:
+        query = query.filter(PerformanceReview.cycle_id == cycle_id)
+    return query.order_by(PerformanceReview.cycle_id.desc()).all()
+
+
 @router.get("/reviews/my-team", response_model=list[ReviewOut])
 def list_my_team_reviews(
     db: Session = Depends(get_db),

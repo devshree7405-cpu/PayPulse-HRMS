@@ -6,11 +6,25 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.dependencies import CurrentUser, get_current_user
+from app.dependencies import CurrentUser, get_current_user, require_role
 from app.models import Employee, LeaveBalance, LeaveRequest, LeaveType
-from app.schemas.leave import LeaveBalanceOut, LeaveRejectIn, LeaveRequestCreate, LeaveRequestOut
+from app.schemas.leave import (
+    LeaveBalanceOut,
+    LeaveRejectIn,
+    LeaveRequestCreate,
+    LeaveRequestOut,
+    LeaveTypeOut,
+)
 
 router = APIRouter(prefix="/leave", tags=["Leave"])
+
+
+@router.get("/types", response_model=list[LeaveTypeOut])
+def list_leave_types(
+    db: Session = Depends(get_db), current_user: CurrentUser = Depends(get_current_user)
+):
+    """Reference data for the employee leave-request form."""
+    return db.query(LeaveType).order_by(LeaveType.leave_type_name).all()
 
 
 def _resolve_target_employee(
@@ -199,3 +213,48 @@ def get_leave_balance(
     if year:
         query = query.filter(LeaveBalance.year == year)
     return query.all()
+
+
+@router.get("/requests/unassigned", response_model=list[LeaveRequestOut])
+def get_unassigned_leave_requests(
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role(["HRAdmin"])),
+):
+    """
+    Top-of-hierarchy coverage: leave requests from employees who have no
+    manager assigned (manager_id IS NULL) fall to HRAdmin to act on -
+    everyone else's leave goes to their direct manager instead.
+    """
+    return (
+        db.query(LeaveRequest)
+        .join(Employee, LeaveRequest.employee_id == Employee.employee_id)
+        .filter(Employee.manager_id.is_(None))
+        .order_by(LeaveRequest.applied_on.desc())
+        .all()
+    )
+
+
+@router.get("/requests/{employee_id}", response_model=list[LeaveRequestOut])
+def get_leave_requests(
+    employee_id: int,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    target = db.get(Employee, employee_id)
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee not found")
+
+    allowed = (
+        current_user.role == "HRAdmin"
+        or current_user.employee_id == employee_id
+        or (current_user.role == "Manager" and target.manager_id == current_user.employee_id)
+    )
+    if not allowed:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
+
+    return (
+        db.query(LeaveRequest)
+        .filter(LeaveRequest.employee_id == employee_id)
+        .order_by(LeaveRequest.applied_on.desc())
+        .all()
+    )
