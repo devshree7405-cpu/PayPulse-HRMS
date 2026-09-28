@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.dependencies import CurrentUser, get_current_user, require_role
-from app.models import Candidate, Designation, Employee, Interview, JobOpening, OnboardingTask
+from app.models import Candidate, Designation, Employee, Interview, JobOpening, OnboardingTask, User
 from app.schemas.recruitment import (
     CandidateCreate,
     CandidateOut,
@@ -19,6 +19,7 @@ from app.schemas.recruitment import (
     OnboardingTaskCreate,
     OnboardingTaskOut,
 )
+from app.security import hash_password
 
 router = APIRouter(tags=["Recruitment"])
 
@@ -146,7 +147,24 @@ def update_candidate_status(
     candidate.status = "Hired"
     candidate.converted_employee_id = new_employee.employee_id
 
-    db.commit()
+    if payload.account:
+        db.add(
+            User(
+                employee_id=new_employee.employee_id,
+                email=payload.account.email,
+                password_hash=hash_password(payload.account.password),
+                role=payload.account.role,
+            )
+        )
+
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An account with this login email already exists - can't complete the hire",
+        )
     db.refresh(candidate)
     return candidate
 

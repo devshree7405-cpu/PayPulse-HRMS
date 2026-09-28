@@ -8,6 +8,8 @@ from app.database import get_db
 from app.dependencies import CurrentUser, get_current_user, require_role
 from app.models import Department, Designation, Employee, EmployeeBankDetails, SalaryHistory, User
 from app.schemas.employee import (
+    AccountIn,
+    AccountOut,
     BankDetailsOut,
     DepartmentCreate,
     DepartmentOut,
@@ -178,6 +180,42 @@ def update_employee(
 
     db.refresh(employee)
     return employee
+
+
+@router.post(
+    "/employees/{employee_id}/account", response_model=AccountOut, status_code=status.HTTP_201_CREATED
+)
+def create_employee_account(
+    employee_id: int,
+    payload: AccountIn,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role(["HRAdmin"])),
+):
+    """
+    Provisions a login for an employee who doesn't have one yet - covers
+    both a manually-created HR-profile-only record and, notably, a
+    candidate the hire-flow converted into an employee (that flow only
+    creates the Employee row, never a User).
+    """
+    employee = _get_employee_or_404(employee_id, db)
+    if employee.user is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="This employee already has a login account"
+        )
+
+    user = User(
+        employee_id=employee_id,
+        email=payload.email,
+        password_hash=hash_password(payload.password),
+        role=payload.role,
+    )
+    db.add(user)
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=_friendly_integrity_error(exc))
+    return AccountOut(email=user.email, role=user.role, employee_id=employee_id)
 
 
 @router.get("/employees/{employee_id}/bank-details", response_model=BankDetailsOut)

@@ -4,6 +4,8 @@ from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, EmailStr
 
+from app.schemas.employee import AccountIn
+
 CandidateStatus = Literal["Applied", "Screening", "Interview", "Offered", "Hired", "Rejected"]
 
 
@@ -62,6 +64,9 @@ class CandidateStatusIn(BaseModel):
     employment_type: Literal["Full-Time", "Part-Time", "Contract"] = "Full-Time"
     base_salary: Decimal = Decimal("0")
     hire_date: Optional[date] = None
+    # Optional: provision a login for the newly-converted employee in
+    # the same step, so the hire flow doesn't leave them account-less.
+    account: Optional[AccountIn] = None
 
 
 # ---------- Interviews ----------

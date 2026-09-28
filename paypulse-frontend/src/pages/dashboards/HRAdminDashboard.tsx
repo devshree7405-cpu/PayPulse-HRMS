@@ -21,6 +21,7 @@ type Employee = {
   employment_type: string; employment_status: string; base_salary: number;
   department_id: number; designation_id: number; manager_id: number | null;
   emergency_contact_name: string | null; emergency_contact_phone: string | null;
+  has_login: boolean;
 };
 type Department = { department_id: number; department_name: string; head_employee_id: number | null };
 type Designation = { designation_id: number; title: string; department_id: number; grade_level: string | null };
@@ -822,6 +823,7 @@ function EmployeeDirectoryPage({ employees, departments, designations, departmen
                 <th className="px-6 py-3 font-semibold">Department</th>
                 <th className="px-6 py-3 font-semibold">Designation</th>
                 <th className="px-6 py-3 font-semibold">Status</th>
+                <th className="px-6 py-3 font-semibold">Login</th>
                 <th className="px-6 py-3 font-semibold">Manager</th>
                 <th className="px-6 py-3 font-semibold" />
               </tr>
@@ -843,13 +845,18 @@ function EmployeeDirectoryPage({ employees, departments, designations, departmen
                     <td className="px-6 py-4">{departmentById(emp.department_id)?.department_name ?? "—"}</td>
                     <td className="px-6 py-4">{designationById(emp.designation_id)?.title ?? "—"}</td>
                     <td className="px-6 py-4"><span className={`rounded-full px-2.5 py-1 text-xs font-bold ${statusStyle(emp.employment_status)}`}>{emp.employment_status}</span></td>
+                    <td className="px-6 py-4">
+                      {emp.has_login
+                        ? <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-700">Active</span>
+                        : <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-bold text-amber-700">No login</span>}
+                    </td>
                     <td className="px-6 py-4">{mgr ? fullName(mgr) : <span className="text-slate-400">None (top-level)</span>}</td>
                     <td className="px-6 py-4 text-right">
                       <button onClick={() => setEditing(emp)} className="text-sm font-semibold text-brand-600 hover:text-brand-700">Edit</button>
                     </td>
                   </tr>
                 );
-              }) : <tr><td colSpan={6} className="px-6 py-14 text-center text-slate-400">No employees match your search.</td></tr>}
+              }) : <tr><td colSpan={7} className="px-6 py-14 text-center text-slate-400">No employees match your search.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -949,7 +956,7 @@ function AddEmployeeModal({ departments, designations, employees, onClose, onSav
             {employees.map((e) => <option key={e.employee_id} value={e.employee_id}>{fullName(e)}</option>)}
           </select>
         </Field>
-        <Field label="Base salary">
+        <Field label="Base salary (monthly)">
           <input type="number" min="0" step="0.01" value={form.base_salary} onChange={(e) => setForm({ ...form, base_salary: e.target.value })} className={inputClass} />
         </Field>
 
@@ -998,6 +1005,9 @@ function EditEmployeeModal({ employee, departments, designations, employees, onC
   });
   const [saving, setSaving] = useState(false);
 
+  const [account, setAccount] = useState({ email: employee.personal_email, password: "", role: "Employee" as "HRAdmin" | "Manager" | "Employee" });
+  const [creatingAccount, setCreatingAccount] = useState(false);
+
   const availableDesignations = designations.filter((d) => d.department_id === Number(form.department_id));
   const salaryChanged = Number(form.base_salary) !== Number(employee.base_salary);
 
@@ -1020,6 +1030,16 @@ function EditEmployeeModal({ employee, departments, designations, employees, onC
       await onSaved();
     } catch (err) { onNotice(extractErrorMessage(err, "Could not update employee.")); }
     finally { setSaving(false); }
+  };
+
+  const submitAccount = async (e: FormEvent) => {
+    e.preventDefault();
+    try {
+      setCreatingAccount(true);
+      await api.post(`/employees/${employee.employee_id}/account`, { ...account, email: account.email.trim() });
+      await onSaved();
+    } catch (err) { onNotice(extractErrorMessage(err, "Could not create login account.")); }
+    finally { setCreatingAccount(false); }
   };
 
   return (
@@ -1056,7 +1076,7 @@ function EditEmployeeModal({ employee, departments, designations, employees, onC
             {employees.filter((e) => e.employee_id !== employee.employee_id).map((e) => <option key={e.employee_id} value={e.employee_id}>{fullName(e)}</option>)}
           </select>
         </Field>
-        <Field label="Base salary">
+        <Field label="Base salary (monthly)">
           <input type="number" min="0" step="0.01" value={form.base_salary} onChange={(e) => setForm({ ...form, base_salary: e.target.value })} className={inputClass} />
         </Field>
         {salaryChanged && (
@@ -1071,6 +1091,25 @@ function EditEmployeeModal({ employee, departments, designations, employees, onC
           <button disabled={saving} className="rounded-xl bg-brand-500 px-5 py-2.5 text-sm font-bold text-white hover:bg-brand-600 disabled:opacity-60">{saving ? "Saving…" : "Save changes"}</button>
         </div>
       </form>
+
+      {!employee.has_login && (
+        <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <p className="text-sm font-bold text-amber-800">⚠️ This employee has no login account yet</p>
+          <p className="mt-1 text-xs text-amber-700">They can't sign in to any dashboard until one is created here.</p>
+          <form onSubmit={submitAccount} className="mt-4 grid gap-3 sm:grid-cols-3">
+            <Field label="Login email"><input required type="email" value={account.email} onChange={(e) => setAccount({ ...account, email: e.target.value })} className={inputClass} /></Field>
+            <Field label="Password"><input required type="password" value={account.password} onChange={(e) => setAccount({ ...account, password: e.target.value })} className={inputClass} /></Field>
+            <Field label="Role">
+              <select value={account.role} onChange={(e) => setAccount({ ...account, role: e.target.value as typeof account.role })} className={inputClass}>
+                <option value="Employee">Employee</option><option value="Manager">Manager</option><option value="HRAdmin">HRAdmin</option>
+              </select>
+            </Field>
+            <button disabled={creatingAccount} className="sm:col-span-3 rounded-xl bg-amber-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-amber-700 disabled:opacity-60">
+              {creatingAccount ? "Creating…" : "Create login account"}
+            </button>
+          </form>
+        </div>
+      )}
     </Modal>
   );
 }
@@ -1720,6 +1759,8 @@ function HireCandidateModal({ candidate, designations, employees, onClose, onSav
   const [form, setForm] = useState({
     designation_id: "", manager_id: "", employment_type: "Full-Time", base_salary: "", hire_date: new Date().toISOString().slice(0, 10),
   });
+  const [createAccount, setCreateAccount] = useState(true);
+  const [account, setAccount] = useState({ email: candidate.email, password: "", role: "Employee" as "HRAdmin" | "Manager" | "Employee" });
   const [saving, setSaving] = useState(false);
 
   const submit = async (e: FormEvent) => {
@@ -1731,6 +1772,7 @@ function HireCandidateModal({ candidate, designations, employees, onClose, onSav
         designation_id: form.designation_id ? Number(form.designation_id) : undefined,
         manager_id: form.manager_id ? Number(form.manager_id) : undefined,
         employment_type: form.employment_type, base_salary: Number(form.base_salary || 0), hire_date: form.hire_date,
+        account: createAccount ? { ...account, email: account.email.trim() } : undefined,
       });
       await onSaved();
     } catch (err) { onNotice(extractErrorMessage(err, "Could not complete hire flow.")); }
@@ -1759,8 +1801,27 @@ function HireCandidateModal({ candidate, designations, employees, onClose, onSav
             <option>Full-Time</option><option>Part-Time</option><option>Contract</option>
           </select>
         </Field>
-        <Field label="Base salary"><input type="number" min="0" step="0.01" value={form.base_salary} onChange={(e) => setForm({ ...form, base_salary: e.target.value })} className={inputClass} /></Field>
+        <Field label="Base salary (monthly)"><input type="number" min="0" step="0.01" value={form.base_salary} onChange={(e) => setForm({ ...form, base_salary: e.target.value })} className={inputClass} /></Field>
         <Field label="Hire date"><input type="date" value={form.hire_date} onChange={(e) => setForm({ ...form, hire_date: e.target.value })} className={inputClass} /></Field>
+
+        <div className="rounded-xl border border-slate-200 p-4">
+          <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+            <input type="checkbox" checked={createAccount} onChange={(e) => setCreateAccount(e.target.checked)} className="h-4 w-4 rounded border-slate-300" />
+            Create a login account for this new employee
+          </label>
+          {createAccount && (
+            <div className="mt-4 grid gap-3 sm:grid-cols-3">
+              <Field label="Login email"><input required={createAccount} type="email" value={account.email} onChange={(e) => setAccount({ ...account, email: e.target.value })} className={inputClass} /></Field>
+              <Field label="Password"><input required={createAccount} type="password" value={account.password} onChange={(e) => setAccount({ ...account, password: e.target.value })} className={inputClass} /></Field>
+              <Field label="Role">
+                <select value={account.role} onChange={(e) => setAccount({ ...account, role: e.target.value as typeof account.role })} className={inputClass}>
+                  <option value="Employee">Employee</option><option value="Manager">Manager</option><option value="HRAdmin">HRAdmin</option>
+                </select>
+              </Field>
+            </div>
+          )}
+        </div>
+
         <div className="flex justify-end gap-3">
           <button type="button" onClick={onClose} className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50">Cancel</button>
           <button disabled={saving} className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-600 disabled:opacity-60">{saving ? "Hiring…" : "Confirm hire"}</button>

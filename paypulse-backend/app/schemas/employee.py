@@ -61,6 +61,12 @@ class AccountIn(BaseModel):
     role: Literal["HRAdmin", "Manager", "Employee"] = "Employee"
 
 
+class AccountOut(BaseModel):
+    email: str
+    role: str
+    employee_id: int
+
+
 # ---------- Employees ----------
 class EmployeeCreate(BaseModel):
     first_name: str
@@ -138,5 +144,6 @@ class EmployeeOut(BaseModel):
     emergency_contact_name: Optional[str] = None
     emergency_contact_phone: Optional[str] = None
     profile_photo_url: Optional[str] = None
+    has_login: bool = False
     created_at: datetime
     updated_at: datetime

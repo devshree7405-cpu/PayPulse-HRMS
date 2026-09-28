@@ -88,6 +88,10 @@ class Employee(Base):
         back_populates="employee", uselist=False
     )
 
+    @property
+    def has_login(self) -> bool:
+        return self.user is not None
+
 
 class User(Base):
     __tablename__ = "users"
