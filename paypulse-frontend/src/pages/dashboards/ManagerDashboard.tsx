@@ -765,32 +765,60 @@ function ProfilePage({ employee, onSaved, onNotice }: {
 
 // ─── Team Directory ───────────────────────────────────────────────────────────
 function TeamDirectoryPage({ team }: { team: Employee[] }) {
+  const mid = Math.ceil(team.length / 2);
+  const groups: [string, Employee[]][] = [
+    ["Group A", team.slice(0, mid)],
+    ["Group B", team.slice(mid)],
+  ];
+
   return (
     <>
-      <section>
-        <h1 className="text-3xl font-bold tracking-tight">Team directory</h1>
-        <p className="mt-2 text-sm text-slate-500">Your direct reports at a glance.</p>
+      <section className="flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Team directory</h1>
+          <p className="mt-2 text-sm text-slate-500">Your direct reports split across two groups.</p>
+        </div>
+        <span className="inline-flex h-8 items-center rounded-full bg-brand-50 px-3 text-sm font-bold text-brand-700">
+          {team.length} member{team.length !== 1 ? "s" : ""}
+        </span>
       </section>
       {team.length ? (
-        <div className="mt-7 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {team.map((emp) => (
-            <Card key={emp.employee_id}>
-              <div className="flex items-center gap-4">
-                <div className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-[#a9c8ff] to-[#607bf0] text-sm font-bold text-white">
-                  {initials(emp)}
+        <div className="mt-7 grid gap-8 xl:grid-cols-2">
+          {groups.map(([groupName, members]) => (
+            members.length > 0 && (
+              <div key={groupName}>
+                <div className="mb-4 flex items-center gap-3">
+                  <div className="grid h-7 w-7 place-items-center rounded-lg bg-brand-500 text-xs font-bold text-white">
+                    {groupName.slice(-1)}
+                  </div>
+                  <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500">{groupName}</h2>
+                  <span className="ml-auto text-xs text-slate-400">{members.length} member{members.length !== 1 ? "s" : ""}</span>
                 </div>
-                <div className="min-w-0">
-                  <p className="truncate font-bold text-slate-800">{fullName(emp)}</p>
-                  <p className="text-xs text-slate-400">{emp.employee_code}</p>
+                <div className="space-y-3">
+                  {members.map((emp) => (
+                    <Card key={emp.employee_id} className="!p-4">
+                      <div className="flex items-center gap-3">
+                        <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-[#a9c8ff] to-[#607bf0] text-sm font-bold text-white">
+                          {initials(emp)}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate font-bold text-slate-800">{fullName(emp)}</p>
+                          <p className="text-xs text-slate-400">{emp.employee_code}</p>
+                        </div>
+                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-bold ${emp.employment_status === "Active" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
+                          {emp.employment_status}
+                        </span>
+                      </div>
+                      <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 border-t border-slate-100 pt-3 text-xs">
+                        <p className="text-slate-400">Email<span className="ml-1 truncate font-medium text-slate-600">{emp.personal_email}</span></p>
+                        <p className="text-slate-400">Type<span className="ml-1 font-medium text-slate-600">{emp.employment_type}</span></p>
+                        <p className="text-slate-400">Joined<span className="ml-1 font-medium text-slate-600">{formatDate(emp.hire_date)}</span></p>
+                      </div>
+                    </Card>
+                  ))}
                 </div>
               </div>
-              <div className="mt-4 space-y-2 border-t border-slate-100 pt-4 text-sm">
-                <p className="flex gap-2"><span className="text-slate-400 w-24 shrink-0">Email</span><span className="truncate font-medium text-slate-700">{emp.personal_email}</span></p>
-                <p className="flex gap-2"><span className="text-slate-400 w-24 shrink-0">Status</span><span className={`rounded-full px-2 py-0.5 text-xs font-bold ${emp.employment_status === "Active" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>{emp.employment_status}</span></p>
-                <p className="flex gap-2"><span className="text-slate-400 w-24 shrink-0">Type</span><span className="font-medium text-slate-700">{emp.employment_type}</span></p>
-                <p className="flex gap-2"><span className="text-slate-400 w-24 shrink-0">Joined</span><span className="font-medium text-slate-700">{formatDate(emp.hire_date)}</span></p>
-              </div>
-            </Card>
+            )
           ))}
         </div>
       ) : (
@@ -963,12 +991,40 @@ function TeamApprovalsPage({ requests, leaveTypes, employeeById, onRefresh, onNo
 }
 
 // ─── Team Performance ────────────────────────────────────────────────────────
+function lastMonthCycleId(cycles: ReviewCycle[]): number | null {
+  const today = new Date();
+  const lastMonth = today.getMonth() === 0
+    ? new Date(today.getFullYear() - 1, 11, 1)
+    : new Date(today.getFullYear(), today.getMonth() - 1, 1);
+  const y = lastMonth.getFullYear();
+  const m = lastMonth.getMonth(); // 0-indexed
+
+  // Find cycle whose start_date falls in last month
+  const match = cycles.find((c) => {
+    const d = new Date(c.start_date);
+    return d.getFullYear() === y && d.getMonth() === m;
+  });
+  // Fallback: most recent cycle by start_date
+  if (!match) {
+    const sorted = [...cycles].sort((a, b) =>
+      new Date(b.start_date).getTime() - new Date(a.start_date).getTime()
+    );
+    return sorted[0]?.cycle_id ?? null;
+  }
+  return match.cycle_id;
+}
+
 function TeamPerformancePage({ team, cycles, reviews, onRefresh, onNotice }: {
   team: Employee[]; cycles: ReviewCycle[]; reviews: PerformanceReview[];
   onRefresh: () => Promise<void>; onNotice: (m: string) => void;
 }) {
   const [ratingForm, setRatingForm] = useState<{ reviewId: number; rating: string; feedback: string } | null>(null);
   const [saving, setSaving] = useState(false);
+
+  const targetCycleId = lastMonthCycleId(cycles);
+  const filteredReviews = targetCycleId !== null
+    ? reviews.filter((r) => r.cycle_id === targetCycleId)
+    : reviews;
 
   const activeCycles = cycles.filter((c) => c.status === "Active");
   const cycleById = (id: number) => cycles.find((c) => c.cycle_id === id);
@@ -1045,17 +1101,21 @@ function TeamPerformancePage({ team, cycles, reviews, onRefresh, onNotice }: {
         </div>
       )}
 
-      {/* Active cycles notice */}
-      {activeCycles.length > 0 && (
-        <div className="mt-7 rounded-xl border border-brand-100 bg-brand-50 px-4 py-3 text-sm text-brand-700">
-          <strong>Active:</strong> {activeCycles.map((c) => c.cycle_name).join(", ")}
-        </div>
-      )}
+      {/* Cycle header */}
+      <div className="mt-7 flex items-center justify-between rounded-xl border border-brand-100 bg-brand-50 px-4 py-3 text-sm text-brand-700">
+        <span>
+          <strong>Showing:</strong>{" "}
+          {targetCycleId ? cycleById(targetCycleId)?.cycle_name ?? "Last month's cycle" : "No cycle found"}
+        </span>
+        {activeCycles.length > 0 && (
+          <span className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-bold text-emerald-700">Active</span>
+        )}
+      </div>
 
       {/* Reviews list */}
-      {reviews.length ? (
-        <div className="mt-7 space-y-4">
-          {reviews.map((review) => (
+      {filteredReviews.length ? (
+        <div className="mt-5 space-y-4">
+          {filteredReviews.map((review) => (
             <Card key={review.review_id}>
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
                 <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -1102,10 +1162,10 @@ function TeamPerformancePage({ team, cycles, reviews, onRefresh, onNotice }: {
           ))}
         </div>
       ) : (
-        <Card className="mt-7 py-16 text-center">
+        <Card className="mt-5 py-16 text-center">
           <Star className="mx-auto text-brand-300" size={34} />
-          <h2 className="mt-4 font-bold text-slate-700">No reviews assigned</h2>
-          <p className="mt-1 text-sm text-slate-400">Performance reviews your team submits will appear here for you to rate.</p>
+          <h2 className="mt-4 font-bold text-slate-700">No reviews for last month</h2>
+          <p className="mt-1 text-sm text-slate-400">Monthly reviews your team submits will appear here for you to rate.</p>
         </Card>
       )}
     </>
