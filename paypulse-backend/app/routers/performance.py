@@ -19,6 +19,28 @@ from app.schemas.performance import (
 router = APIRouter(prefix="/performance", tags=["Performance"])
 
 
+@router.get("/cycles", response_model=list[ReviewCycleOut])
+def list_cycles(
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(get_current_user),
+):
+    return db.query(ReviewCycle).order_by(ReviewCycle.start_date.desc()).all()
+
+
+@router.get("/reviews/my-team", response_model=list[ReviewOut])
+def list_my_team_reviews(
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(require_role(["Manager", "HRAdmin"])),
+):
+    """Returns all reviews where this manager is the assigned reviewer."""
+    return (
+        db.query(PerformanceReview)
+        .filter(PerformanceReview.reviewer_id == current_user.employee_id)
+        .order_by(PerformanceReview.cycle_id.desc())
+        .all()
+    )
+
+
 @router.post("/cycles", response_model=ReviewCycleOut, status_code=status.HTTP_201_CREATED)
 def create_cycle(
     payload: ReviewCycleCreate,
