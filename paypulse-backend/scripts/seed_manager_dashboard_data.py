@@ -223,7 +223,7 @@ def seed_payslip(db, employee_id: int, today: date,
 
 def get_or_create_monthly_cycle(db, today: date) -> ReviewCycle:
     year, month = previous_month(today)
-    cycle_name = f"Monthly Review — {date(year, month, 1).strftime('%B %Y')}"
+    cycle_name = f"Monthly Review - {date(year, month, 1).strftime('%B %Y')}"
     cycle = db.query(ReviewCycle).filter(ReviewCycle.cycle_name == cycle_name).first()
     if cycle is None:
         first_day = date(year, month, 1)
@@ -247,26 +247,13 @@ def main() -> None:
         if engineering is None:
             raise RuntimeError("Run seed_demo_logins.py first (Engineering department is required).")
 
-        manager_user = db.query(User).filter(User.email == "ishan.mehta@paypulse.com").first()
-        if manager_user is None:
+        ishan = db.query(User).filter(User.email == "ishan.mehta@paypulse.com").first()
+        if ishan is None:
             raise RuntimeError("Manager account not found. Run seed_demo_logins.py first.")
-        mgr_id = manager_user.employee_id
+        mgr_id = ishan.employee_id
 
-        # ── 1. Manager's own data ──────────────────────────────────────────
-        print("Seeding manager attendance...")
-        seed_attendance(db, mgr_id, today, variation=1)
-
-        print("Seeding manager leave...")
-        seed_leave_data(db, mgr_id, manager_id=mgr_id, today=today,
-                        add_pending=False, offset_days=22)
-
-        print("Seeding manager payslip (senior salary)...")
-        seed_payslip(db, mgr_id, today,
-                     basic=Decimal("70000"), hra=Decimal("32000"),
-                     conveyance=Decimal("2500"), pf=Decimal("5000"))
-
-        # ── 2. Extra direct reports ────────────────────────────────────────
-        print("Creating extra direct reports...")
+        # ── 1. Extra direct reports for Ishan only ─────────────────────────
+        print("Creating extra direct reports for Ishan Mehta...")
         for account in EXTRA_REPORTS:
             existing = db.query(User).filter(User.email == account["email"]).first()
             if existing is None:
@@ -294,46 +281,58 @@ def main() -> None:
                     is_active=True,
                 ))
                 db.flush()
-
         db.commit()
 
-        # ── 3. Reload all 4 direct reports ────────────────────────────────
-        print("Seeding team data (attendance, leave, payslip, reviews)...")
-        direct_reports = db.query(Employee).filter(Employee.manager_id == mgr_id).all()
-
+        # ── 2. Seed every manager account found in the system ──────────────
+        # (Managers can't view their own payslips - backend blocks that
+        # role entirely from /payroll - so no payslip is seeded for them.)
+        all_managers = db.query(User).filter(User.role == "Manager").all()
         cycle = get_or_create_monthly_cycle(db, today)
 
-        for idx, emp in enumerate(direct_reports):
-            seed_attendance(db, emp.employee_id, today, variation=idx)
-            seed_leave_data(
-                db, emp.employee_id, manager_id=mgr_id, today=today,
-                add_pending=(idx % 2 == 0),   # alternating: 2 out of 4 have pending requests
-                offset_days=14 + idx * 4,
-            )
-            seed_payslip(db, emp.employee_id, today,
-                         basic=Decimal("45000"), hra=Decimal("24000"),
-                         conveyance=Decimal("1500"), pf=Decimal("3000"))
+        for manager_user in all_managers:
+            mgr = manager_user.employee_id
+            mgr_name = f"{manager_user.employee.first_name} {manager_user.employee.last_name}"
+            print(f"\nSeeding data for manager: {mgr_name} <{manager_user.email}>")
 
-            # Monthly performance review with self-rating already filled in
-            review_exists = db.query(PerformanceReview).filter(
-                PerformanceReview.employee_id == emp.employee_id,
-                PerformanceReview.cycle_id == cycle.cycle_id,
-            ).first()
-            if not review_exists:
-                rating, comments = SELF_RATINGS[idx % len(SELF_RATINGS)]
-                db.add(PerformanceReview(
-                    employee_id=emp.employee_id,
-                    cycle_id=cycle.cycle_id,
-                    reviewer_id=mgr_id,
-                    self_rating=rating,
-                    self_comments=comments,
-                    status="Submitted",
-                ))
+            seed_attendance(db, mgr, today, variation=1)
+            seed_leave_data(db, mgr, manager_id=mgr, today=today, add_pending=False, offset_days=22)
+
+            direct_reports = db.query(Employee).filter(Employee.manager_id == mgr).all()
+            if not direct_reports:
+                print("  (no direct reports - skipping team data)")
+                continue
+
+            for idx, emp in enumerate(direct_reports):
+                seed_attendance(db, emp.employee_id, today, variation=idx)
+                seed_leave_data(
+                    db, emp.employee_id, manager_id=mgr, today=today,
+                    add_pending=(idx % 2 == 0),   # alternating: half have a pending request
+                    offset_days=14 + idx * 4,
+                )
+                seed_payslip(db, emp.employee_id, today,
+                             basic=Decimal("45000"), hra=Decimal("24000"),
+                             conveyance=Decimal("1500"), pf=Decimal("3000"))
+
+                # Monthly performance review with self-rating already filled in
+                review_exists = db.query(PerformanceReview).filter(
+                    PerformanceReview.employee_id == emp.employee_id,
+                    PerformanceReview.cycle_id == cycle.cycle_id,
+                ).first()
+                if not review_exists:
+                    rating, comments = SELF_RATINGS[idx % len(SELF_RATINGS)]
+                    db.add(PerformanceReview(
+                        employee_id=emp.employee_id,
+                        cycle_id=cycle.cycle_id,
+                        reviewer_id=mgr,
+                        self_rating=rating,
+                        self_comments=comments,
+                        status="Submitted",
+                    ))
+            print(f"  Direct reports: {[f'{e.first_name} {e.last_name}' for e in direct_reports]}")
 
         db.commit()
-        print(f"\nDone. Manager data seeded for: ishan.mehta@paypulse.com")
-        print(f"Direct reports: {[f'{e.first_name} {e.last_name}' for e in direct_reports]}")
-        print(f"Review cycle created: '{cycle.cycle_name}'")
+        print(f"\nDone. Seeded {len(all_managers)} manager account(s).")
+        print(f"Review cycle: '{cycle.cycle_name}'")
     except Exception:
         db.rollback()
         raise

@@ -1,6 +1,6 @@
 import {
   Bell, CalendarDays, ChevronDown, Clock3, FileText, LayoutDashboard,
-  LogOut, Menu, Plane, Plus, ReceiptText, Save, Settings, Star,
+  LogOut, Menu, Plane, Plus, Save, Settings, Star,
   UserRound, Users, X, CheckCircle, XCircle, TrendingUp,
 } from "lucide-react";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
@@ -9,7 +9,7 @@ import { useAuth } from "../../context/AuthContext";
 import { api, extractErrorMessage } from "../../lib/api";
 
 type Page =
-  | "overview" | "attendance" | "leave" | "payslips" | "profile"
+  | "overview" | "attendance" | "leave" | "profile"
   | "team-approvals" | "team-performance" | "team-directory";
 
 type Employee = {
@@ -30,11 +30,6 @@ type LeaveRequest = {
   no_of_days: number; reason: string | null; status: string; applied_on: string;
   employee_id: number;
 };
-type Payslip = {
-  payslip_id: number; payslip_month: number; payslip_year: number; gross_pay: number;
-  total_deductions: number; net_pay: number; status: string;
-  details: { component_id: number; component_type: string; amount: number }[];
-};
 type ReviewCycle = { cycle_id: number; cycle_name: string; start_date: string; end_date: string; status: string };
 type PerformanceReview = {
   review_id: number; employee_id: number; cycle_id: number; reviewer_id: number;
@@ -49,7 +44,6 @@ const navigation: { page: Page; label: string; icon: typeof LayoutDashboard; sec
   { page: "overview", label: "Overview", icon: LayoutDashboard },
   { page: "attendance", label: "My attendance", icon: Clock3 },
   { page: "leave", label: "My leave", icon: Plane },
-  { page: "payslips", label: "My payslips", icon: ReceiptText },
   { page: "profile", label: "My profile", icon: UserRound },
   { page: "team-directory", label: "Team directory", icon: Users, section: "Team" },
   { page: "team-approvals", label: "Leave approvals", icon: CheckCircle, section: "Team" },
@@ -57,13 +51,10 @@ const navigation: { page: Page; label: string; icon: typeof LayoutDashboard; sec
 ];
 const pageTitles: Record<Page, string> = {
   overview: "Overview", attendance: "My attendance", leave: "My leave",
-  payslips: "My payslips", profile: "My profile",
+  profile: "My profile",
   "team-directory": "Team directory", "team-approvals": "Leave approvals",
   "team-performance": "Performance reviews",
 };
-
-const monthName = new Intl.DateTimeFormat("en-IN", { month: "long", year: "numeric" });
-const money = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 });
 
 function initials(e: Employee | null) {
   return e ? `${e.first_name[0]}${e.last_name[0]}`.toUpperCase() : "M";
@@ -122,7 +113,6 @@ export default function ManagerDashboard() {
   const [leaveTypes, setLeaveTypes] = useState<LeaveType[]>([]);
   const [myBalances, setMyBalances] = useState<LeaveBalance[]>([]);
   const [myRequests, setMyRequests] = useState<LeaveRequest[]>([]);
-  const [myPayslips, setMyPayslips] = useState<Payslip[]>([]);
   const [team, setTeam] = useState<Employee[]>([]);
   const [teamLeaveRequests, setTeamLeaveRequests] = useState<LeaveRequest[]>([]);
   const [cycles, setCycles] = useState<ReviewCycle[]>([]);
@@ -139,39 +129,42 @@ export default function ManagerDashboard() {
       const id = session.employeeId;
       const year = new Date().getFullYear();
 
-      const [meRes, attRes, typesRes, balRes, reqRes, payRes, teamRes, cyclesRes, reviewsRes] =
-        await Promise.all([
+      // allSettled: one endpoint failing (e.g. a future permission change)
+      // must not blank out the rest of the dashboard.
+      const [meRes, attRes, typesRes, balRes, reqRes, teamRes, cyclesRes, reviewsRes] =
+        await Promise.allSettled([
           api.get<Employee>(`/employees/${id}`),
           api.get<Attendance[]>(`/attendance/${id}`),
           api.get<LeaveType[]>("/leave/types"),
           api.get<LeaveBalance[]>(`/leave/balance/${id}?year=${year}`),
           api.get<LeaveRequest[]>(`/leave/requests/${id}`),
-          api.get<Payslip[]>(`/payroll/payslip/${id}`),
           api.get<Employee[]>("/employees"),
           api.get<ReviewCycle[]>("/performance/cycles"),
           api.get<PerformanceReview[]>("/performance/reviews/my-team"),
         ]);
 
-      setMe(meRes.data);
-      setMyAttendance(attRes.data);
-      setLeaveTypes(typesRes.data);
-      setMyBalances(balRes.data);
-      setMyRequests(reqRes.data);
-      setMyPayslips(payRes.data);
+      if (meRes.status === "fulfilled") setMe(meRes.value.data);
+      if (attRes.status === "fulfilled") setMyAttendance(attRes.value.data);
+      if (typesRes.status === "fulfilled") setLeaveTypes(typesRes.value.data);
+      if (balRes.status === "fulfilled") setMyBalances(balRes.value.data);
+      if (reqRes.status === "fulfilled") setMyRequests(reqRes.value.data);
+      if (cyclesRes.status === "fulfilled") setCycles(cyclesRes.value.data);
+      if (reviewsRes.status === "fulfilled") setTeamReviews(reviewsRes.value.data);
 
-      const directReports = teamRes.data.filter((e) => e.manager_id === id);
+      const directReports =
+        teamRes.status === "fulfilled" ? teamRes.value.data.filter((e) => e.manager_id === id) : [];
       setTeam(directReports);
 
-      const allLeaveReqs = await Promise.all(
-        directReports.map((e) =>
-          api.get<LeaveRequest[]>(`/leave/requests/${e.employee_id}`)
-            .then((r) => r.data)
-            .catch(() => [] as LeaveRequest[])
-        )
+      const leaveSettled = await Promise.allSettled(
+        directReports.map((e) => api.get<LeaveRequest[]>(`/leave/requests/${e.employee_id}`))
       );
-      setTeamLeaveRequests(allLeaveReqs.flat());
-      setCycles(cyclesRes.data);
-      setTeamReviews(reviewsRes.data);
+      setTeamLeaveRequests(
+        leaveSettled.flatMap((r) => (r.status === "fulfilled" ? r.value.data : []))
+      );
+
+      const failed = [meRes, attRes, typesRes, balRes, reqRes, teamRes, cyclesRes, reviewsRes]
+        .find((r) => r.status === "rejected") as PromiseRejectedResult | undefined;
+      if (failed) setNotice(extractErrorMessage(failed.reason, "Some dashboard data could not be loaded."));
     } catch (err) {
       setNotice(extractErrorMessage(err, "Could not load dashboard data."));
     } finally {
@@ -193,10 +186,13 @@ export default function ManagerDashboard() {
       setActionLoading(true);
       await api.post(checkedIn ? "/attendance/checkout" : "/attendance/checkin");
       setNotice(checkedIn ? "Checked out for today." : "Checked in. Have a great day!");
-      await load();
     } catch (err) {
       setNotice(extractErrorMessage(err, "Attendance could not be updated."));
     } finally {
+      // Always resync: even on a 409 conflict, the server's state (an
+      // existing check-in) needs to be reflected so the button doesn't
+      // stay stuck out of sync with what the backend actually has.
+      await load();
       setActionLoading(false);
     }
   };
@@ -327,7 +323,7 @@ export default function ManagerDashboard() {
           {activePage === "overview" && (
             <OverviewPage
               me={me} checkedIn={checkedIn} myAttendance={myAttendance}
-              myRequests={myRequests} myBalances={myBalances} myPayslips={myPayslips}
+              myRequests={myRequests} myBalances={myBalances}
               team={team} teamLeaveRequests={teamLeaveRequests}
               actionLoading={actionLoading} onAttendance={doAttendance} onNavigate={selectPage}
             />
@@ -338,7 +334,6 @@ export default function ManagerDashboard() {
           {activePage === "leave" && (
             <LeavePage types={leaveTypes} balances={myBalances} requests={myRequests} onSubmitted={load} onNotice={setNotice} />
           )}
-          {activePage === "payslips" && <PayslipsPage payslips={myPayslips} />}
           {activePage === "profile" && me && (
             <ProfilePage employee={me} onSaved={(next) => { setMe(next); setNotice("Profile updated."); }} onNotice={setNotice} />
           )}
@@ -363,11 +358,11 @@ export default function ManagerDashboard() {
 
 // ─── Overview ────────────────────────────────────────────────────────────────
 function OverviewPage({
-  me, checkedIn, myAttendance, myRequests, myBalances, myPayslips,
+  me, checkedIn, myAttendance, myRequests, myBalances,
   team, teamLeaveRequests, actionLoading, onAttendance, onNavigate,
 }: {
   me: Employee | null; checkedIn: boolean; myAttendance: Attendance[];
-  myRequests: LeaveRequest[]; myBalances: LeaveBalance[]; myPayslips: Payslip[];
+  myRequests: LeaveRequest[]; myBalances: LeaveBalance[];
   team: Employee[]; teamLeaveRequests: LeaveRequest[];
   actionLoading: boolean; onAttendance: () => void; onNavigate: (p: Page) => void;
 }) {
@@ -398,7 +393,7 @@ function OverviewPage({
           { label: "Team size", value: team.length, sub: "direct reports", icon: Users, color: "text-brand-600 bg-brand-50" },
           { label: "Pending approvals", value: pendingLeave, sub: "leave requests", icon: Plane, color: "text-amber-600 bg-amber-50" },
           { label: "My leave balance", value: remaining, sub: "days remaining", icon: CalendarDays, color: "text-emerald-600 bg-emerald-50" },
-          { label: "My payslips", value: myPayslips.length, sub: "available", icon: ReceiptText, color: "text-violet-600 bg-violet-50" },
+          { label: "My leave requests", value: myRequests.length, sub: "total filed", icon: FileText, color: "text-violet-600 bg-violet-50" },
         ].map(({ label, value, sub, icon: Icon, color }) => (
           <Card key={label}>
             <div className="flex items-center justify-between">
@@ -654,51 +649,6 @@ function LeavePage({ types, balances, requests, onSubmitted, onNotice }: {
           </table>
         </div>
       </Card>
-    </>
-  );
-}
-
-// ─── My Payslips ─────────────────────────────────────────────────────────────
-function PayslipsPage({ payslips }: { payslips: Payslip[] }) {
-  const [expanded, setExpanded] = useState<number | null>(null);
-  return (
-    <>
-      <section>
-        <h1 className="text-3xl font-bold tracking-tight">My payslips</h1>
-        <p className="mt-2 text-sm text-slate-500">Review your finalized monthly pay statements.</p>
-      </section>
-      <div className="mt-7 space-y-4">
-        {payslips.length ? payslips.map((p) => (
-          <Card key={p.payslip_id}>
-            <button onClick={() => setExpanded(expanded === p.payslip_id ? null : p.payslip_id)} className="flex w-full items-center gap-4 text-left">
-              <div className="grid h-11 w-11 place-items-center rounded-xl bg-brand-50 text-brand-600"><ReceiptText size={21} /></div>
-              <div className="flex-1">
-                <p className="font-bold text-slate-800">{monthName.format(new Date(p.payslip_year, p.payslip_month - 1))}</p>
-                <p className="mt-0.5 text-xs text-slate-400">{p.status}</p>
-              </div>
-              <div className="text-right">
-                <p className="text-xs text-slate-400">Net pay</p>
-                <p className="font-bold text-slate-800">{money.format(p.net_pay)}</p>
-              </div>
-              <ChevronDown className={`ml-2 text-slate-400 transition ${expanded === p.payslip_id ? "rotate-180" : ""}`} />
-            </button>
-            {expanded === p.payslip_id && (
-              <div className="mt-5 border-t border-slate-100 pt-5">
-                <div className="grid gap-3 text-sm sm:grid-cols-3">
-                  <p className="rounded-lg bg-slate-50 p-3 text-slate-500">Gross pay<strong className="mt-1 block text-slate-800">{money.format(p.gross_pay)}</strong></p>
-                  <p className="rounded-lg bg-slate-50 p-3 text-slate-500">Deductions<strong className="mt-1 block text-slate-800">{money.format(p.total_deductions)}</strong></p>
-                  <p className="rounded-lg bg-brand-50 p-3 text-brand-700">Net pay<strong className="mt-1 block text-brand-800">{money.format(p.net_pay)}</strong></p>
-                </div>
-              </div>
-            )}
-          </Card>
-        )) : (
-          <Card className="py-16 text-center">
-            <FileText className="mx-auto text-brand-300" size={34} />
-            <h2 className="mt-4 font-bold text-slate-700">No payslips yet</h2>
-          </Card>
-        )}
-      </div>
     </>
   );
 }
